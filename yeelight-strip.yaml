@@ -1,19 +1,8 @@
-# ============================================================
-#  Yeelight Lightstrip (1S / Plus)  —  ESP32-WROOM, analog RGB
-#  This strip is NOT addressable: it's one continuous RGB strip
-#  driven by 3 PWM channels (one each for R, G, B). So instead of
-#  esp32_rmt_led_strip + addressable effects, we use ledc PWM
-#  outputs feeding a plain `rgb` light. Full color + brightness,
-#  smooth hardware fades, and a few simple whole-strip effects.
-#
-#  CONFIRMED PINOUT for the Yeelight controller:
+#  Yeelight Lightstrip (1S / Plus) ESP32-WROOM, analog RGB
 #    Red   -> GPIO13
 #    Green -> GPIO14
 #    Blue  -> GPIO5
-#  If colors look swapped, just move the pin numbers around below.
-#
-#  No secrets.yaml — everything is inlined as you asked.
-# ============================================================
+
 
 substitutions:
   name: yeelight-strip
@@ -30,20 +19,12 @@ esp32:
   board: esp32doit-devkit-v1   # generic ESP32-WROOM-32 dev board profile
   framework:
     type: esp-idf
-    # This Yeelight controller uses a SINGLE-CORE ESP32 (ESP32-U4WDH).
-    # Without this the firmware panics on boot ("multi-core support") and
-    # reboots forever. This forces a single-core build.
     sdkconfig_options:
       CONFIG_FREERTOS_UNICORE: "y"
 
 logger:
 
-# Home Assistant API. Encryption is optional; with it commented out HA
-# adds the device with no key. To lock it down, uncomment and paste a key
-# from https://esphome.io/components/api  (Generate Encryption Key).
 api:
-  # encryption:
-  #   key: "PASTE_A_32BYTE_BASE64_KEY_HERE"
 
 ota:
   - platform: esphome
@@ -52,16 +33,12 @@ wifi:
   ssid: HH72VM_C5BC_2.4G
   password: eh9GFPgn
   power_save_mode: none
-  # Fallback hotspot if it can't reach your Wi-Fi — connect to it to
-  # reconfigure. SSID "Yeelight Strip Setup", password below.
   ap:
     ssid: "Yeelight Strip Setup"
     password: "configme123"
 
 captive_portal:
 
-# ---- 3 PWM channels, one per color ----
-# 1000 Hz is high enough to be flicker-free on camera and to the eye.
 output:
   - platform: ledc
     id: out_red
@@ -76,7 +53,6 @@ output:
     pin: ${blue_pin}
     frequency: 1000 Hz
 
-# ---- The HA-facing RGB light ----
 light:
   - platform: rgb
     name: "Yeelight Strip"
@@ -85,10 +61,8 @@ light:
     green: out_green
     blue: out_blue
     restore_mode: RESTORE_DEFAULT_OFF
-    default_transition_length: 0.8s   # smooth hardware fade on every change
-    # gamma_correct: 2.8  # uncomment if low brightness looks too bright/crushed
+    default_transition_length: 0.8s
     effects:
-      # Whole-strip effects (no addressing needed)
       - pulse:
           name: "Slow pulse"
           transition_length: 2s
@@ -107,7 +81,6 @@ light:
           name: "Random colors"
           transition_length: 4s
           update_interval: 5s
-      # A gentle color-cycle through the rainbow
       - lambda:
           name: "Rainbow cycle"
           update_interval: 80ms
@@ -135,8 +108,6 @@ light:
             call.set_publish(false);
             call.set_save(false);
             call.perform();
-
-# Tracks hold-dim direction: true = brighten, false = dim. Flips each hold.
 globals:
   - id: dim_up
     type: bool
