@@ -1,0 +1,222 @@
+# ============================================================
+#  Yeelight Lightstrip (1S / Plus)  —  ESP32-WROOM, analog RGB
+#  This strip is NOT addressable: it's one continuous RGB strip
+#  driven by 3 PWM channels (one each for R, G, B). So instead of
+#  esp32_rmt_led_strip + addressable effects, we use ledc PWM
+#  outputs feeding a plain `rgb` light. Full color + brightness,
+#  smooth hardware fades, and a few simple whole-strip effects.
+#
+#  CONFIRMED PINOUT for the Yeelight controller:
+#    Red   -> GPIO13
+#    Green -> GPIO14
+#    Blue  -> GPIO5
+#  If colors look swapped, just move the pin numbers around below.
+#
+#  No secrets.yaml — everything is inlined as you asked.
+# ============================================================
+
+substitutions:
+  name: yeelight-strip
+  friendly_name: "Yeelight Strip"
+  red_pin: GPIO13
+  green_pin: GPIO14
+  blue_pin: GPIO5
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32doit-devkit-v1   # generic ESP32-WROOM-32 dev board profile
+  framework:
+    type: esp-idf
+    # This Yeelight controller uses a SINGLE-CORE ESP32 (ESP32-U4WDH).
+    # Without this the firmware panics on boot ("multi-core support") and
+    # reboots forever. This forces a single-core build.
+    sdkconfig_options:
+      CONFIG_FREERTOS_UNICORE: "y"
+
+logger:
+
+# Home Assistant API. Encryption is optional; with it commented out HA
+# adds the device with no key. To lock it down, uncomment and paste a key
+# from https://esphome.io/components/api  (Generate Encryption Key).
+api:
+  # encryption:
+  #   key: "PASTE_A_32BYTE_BASE64_KEY_HERE"
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: HH72VM_C5BC_2.4G
+  password: eh9GFPgn
+  power_save_mode: none
+  # Fallback hotspot if it can't reach your Wi-Fi — connect to it to
+  # reconfigure. SSID "Yeelight Strip Setup", password below.
+  ap:
+    ssid: "Yeelight Strip Setup"
+    password: "configme123"
+
+captive_portal:
+
+# ---- 3 PWM channels, one per color ----
+# 1000 Hz is high enough to be flicker-free on camera and to the eye.
+output:
+  - platform: ledc
+    id: out_red
+    pin: ${red_pin}
+    frequency: 1000 Hz
+  - platform: ledc
+    id: out_green
+    pin: ${green_pin}
+    frequency: 1000 Hz
+  - platform: ledc
+    id: out_blue
+    pin: ${blue_pin}
+    frequency: 1000 Hz
+
+# ---- The HA-facing RGB light ----
+light:
+  - platform: rgb
+    name: "Yeelight Strip"
+    id: strip
+    red: out_red
+    green: out_green
+    blue: out_blue
+    restore_mode: RESTORE_DEFAULT_OFF
+    default_transition_length: 0.8s   # smooth hardware fade on every change
+    # gamma_correct: 2.8  # uncomment if low brightness looks too bright/crushed
+    effects:
+      # Whole-strip effects (no addressing needed)
+      - pulse:
+          name: "Slow pulse"
+          transition_length: 2s
+          update_interval: 2s
+      - pulse:
+          name: "Fast pulse"
+          transition_length: 0.4s
+          update_interval: 0.4s
+      - strobe:
+          name: "Strobe"
+      - flicker:
+          name: "Candle"
+          alpha: 92%
+          intensity: 12%
+      - random:
+          name: "Random colors"
+          transition_length: 4s
+          update_interval: 5s
+      # A gentle color-cycle through the rainbow
+      - lambda:
+          name: "Rainbow cycle"
+          update_interval: 80ms
+          lambda: |-
+            static float hue = 0.0f;
+            hue += 0.01f;
+            if (hue >= 1.0f) hue -= 1.0f;
+            // simple HSV(hue,1,1) -> RGB
+            float h = hue * 6.0f;
+            int   i = (int)h;
+            float f = h - i;
+            float q = 1.0f - f;
+            float r, g, b;
+            switch (i % 6) {
+              case 0: r = 1;  g = f;  b = 0;  break;
+              case 1: r = q;  g = 1;  b = 0;  break;
+              case 2: r = 0;  g = 1;  b = f;  break;
+              case 3: r = 0;  g = q;  b = 1;  break;
+              case 4: r = f;  g = 0;  b = 1;  break;
+              default:r = 1;  g = 0;  b = q;  break;
+            }
+            auto call = id(strip).turn_on();
+            call.set_transition_length(80);
+            call.set_rgb(r, g, b);
+            call.set_publish(false);
+            call.set_save(false);
+            call.perform();
+
+# Tracks hold-dim direction: true = brighten, false = dim. Flips each hold.
+globals:
+  - id: dim_up
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+# ---- Physical button on the controller (GPIO19, active-low) ----
+#   short press  -> toggle on/off
+#   press & hold -> ramp brightness (alternates up/down each hold)
+binary_sensor:
+  - platform: gpio
+    id: strip_button
+    name: "Strip button"
+    pin:
+      number: GPIO19
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 20ms     # debounce
+    # A quick tap toggles. (Won't fire if you hold past 400ms.)
+    on_click:
+      max_length: 400ms
+      then:
+        - light.toggle: strip
+    # Hold to dim: wait past the click window, then ramp while still held.
+    on_press:
+      - delay: 450ms
+      - if:
+          condition:
+            - binary_sensor.is_on: strip_button
+          then:
+            - light.turn_on: strip        # make sure it's on before dimming
+            - while:
+                condition:
+                  - binary_sensor.is_on: strip_button
+                then:
+                  - light.dim_relative:
+                      id: strip
+                      relative_brightness: !lambda 'return id(dim_up) ? 0.03 : -0.03;'
+                      transition_length: 0s   # instant -> updates live while held
+                  - delay: 45ms
+            - lambda: 'id(dim_up) = !id(dim_up);'  # flip direction for next hold
+
+# ---- Sleep timer: turn off after a chosen delay (ported from your example) ----
+select:
+  - platform: template
+    name: "Sleep timer"
+    id: sleep_select
+    icon: mdi:timer-outline
+    optimistic: true
+    restore_value: false
+    initial_option: "Off"
+    options: ["Off", "30 min", "1 h", "1.5 h", "2 h", "3 h"]
+    set_action:
+      - if:
+          condition:
+            lambda: 'return x == "Off";'
+          then:
+            - script.stop: sleep_script
+          else:
+            - script.execute:
+                id: sleep_script
+                mins: !lambda |-
+                  if (x == "30 min") return 30;
+                  if (x == "1 h")    return 60;
+                  if (x == "1.5 h")  return 90;
+                  if (x == "2 h")    return 120;
+                  if (x == "3 h")    return 180;
+                  return 0;
+
+script:
+  - id: sleep_script
+    mode: restart
+    parameters:
+      mins: int
+    then:
+      - delay: !lambda 'return (uint32_t) mins * 60000;'
+      - light.turn_off: strip
+      - select.set:
+          id: sleep_select
+          option: "Off"
