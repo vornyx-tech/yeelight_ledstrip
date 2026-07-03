@@ -6,6 +6,8 @@
 # changeble sleep timer in HA
 
 
+
+
 substitutions:
   name: yeelight-strip
   friendly_name: "Yeelight Strip"
