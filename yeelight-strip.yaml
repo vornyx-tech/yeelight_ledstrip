@@ -2,6 +2,8 @@
 #    Red   -> GPIO13
 #    Green -> GPIO14
 #    Blue  -> GPIO5
+# Hold to dim, press once to toogle 
+# changeble sleep timer in HA
 
 
 substitutions:
@@ -133,19 +135,17 @@ binary_sensor:
       inverted: true
     filters:
       - delayed_on: 20ms     # debounce
-    # A quick tap toggles. (Won't fire if you hold past 400ms.)
     on_click:
       max_length: 400ms
       then:
         - light.toggle: strip
-    # Hold to dim: wait past the click window, then ramp while still held.
     on_press:
       - delay: 450ms
       - if:
           condition:
             - binary_sensor.is_on: strip_button
           then:
-            - light.turn_on: strip        # make sure it's on before dimming
+            - light.turn_on: strip        
             - while:
                 condition:
                   - binary_sensor.is_on: strip_button
@@ -153,11 +153,11 @@ binary_sensor:
                   - light.dim_relative:
                       id: strip
                       relative_brightness: !lambda 'return id(dim_up) ? 0.03 : -0.03;'
-                      transition_length: 0s   # instant -> updates live while held
+                      transition_length: 0s  
                   - delay: 45ms
-            - lambda: 'id(dim_up) = !id(dim_up);'  # flip direction for next hold
+            - lambda: 'id(dim_up) = !id(dim_up);' 
 
-# ---- Sleep timer: turn off after a chosen delay (ported from your example) ----
+# Sleep timer
 select:
   - platform: template
     name: "Sleep timer"
@@ -184,7 +184,7 @@ select:
                   if (x == "3 h")    return 180;
                   return 0;
 
-# No white channel, so color temp is faked from RGB.
+# Fake temp slider
 number:
   - platform: template
     name: "Color temperature"
