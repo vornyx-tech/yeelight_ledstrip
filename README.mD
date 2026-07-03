@@ -1,3 +1,1 @@
-# yeelight_ledstrip
-# yeelight_ledstrip
-# yeelight_ledstrip
+# Yeelight software to make it faster and easy connect to home assistant.
