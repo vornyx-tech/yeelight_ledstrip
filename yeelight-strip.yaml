@@ -29,6 +29,7 @@ esp32:
 logger:
 
 api:
+  password: !secret api_password  # Add your Home Assistant API password to secrets.yaml
 
 ota:
   - platform: esphome
@@ -136,7 +137,7 @@ binary_sensor:
         pullup: true
       inverted: true
     filters:
-      - delayed_on: 20ms     # debounce
+      - delayed_on: 20ms 
     on_click:
       max_length: 400ms
       then:
